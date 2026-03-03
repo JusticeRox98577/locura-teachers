@@ -207,7 +207,7 @@ function render() {
 }
 
 function renderAuthCard() {
-  const emailDefault = "justicecmw9857@gmail.com";
+  const emailDefault = "";
 
   const emailUp = el("input", { class: "input", id: "emailUp", placeholder: "Email", value: emailDefault });
   const passUp = el("input", { class: "input", id: "passUp", placeholder: "Password", type: "password" });
