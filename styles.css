@@ -238,3 +238,6 @@ hr.sep{
   border-radius: 14px;
   margin-top: 10px;
 }
+
+/* Ensure select option text is readable in native dropdowns */
+select.input option{ color:#0b1429; background:#ffffff; }
