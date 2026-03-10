@@ -8,6 +8,47 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.querySelector("#app");
 const esc = (s) => String(s ?? "").replaceAll("<", "&lt;");
 
+const SONGS = {
+  TQMQA: ["TQMQA", "Eladio Carrion"],
+  AKAKAW: ["Akakaw", "Renata Flores"],
+  ANGEL: ["Angel", "Grupo Frontera & Romeo Santos"],
+  TOCANDO: ["Tocando el Cielo", "Luis Fonsi"],
+  REGALO: ["Regalo", "Alvaro Soler"],
+  SISABES: ["Si Sabes Contar", "Los Angeles Azules, Luck Ra, Yami Safdie"],
+  AMULETO: ["Amuleto", "Diego Torres"],
+  NARCISISTA: ["Narcisista", "The Warning"],
+  COLEC: ["Coleccionando Heridas", "Karol G & Antonis Solis"],
+  PARAQUE: ["Para Que?", "Ela Taubert"],
+  MUJER: ["La Mujer que Soy", "Fanny Lu"],
+  BUENCAFE: ["Buen Cafe", "Efecto Pasillo"],
+  GOODBYE: ["Goodbye", "Arthur Hanlon, Carlos Vives, Goyo"],
+  FEB6: ["6 de Febrero", "Aitana"],
+  LUNALLENA: ["Luna Llena", "Ebenezer Guerra & Elvis Crespo"],
+  VUELA: ["Vuela", "Luck Ra & Ke Personaje"],
+  BZRP: ["Music Sessions #66", "Daddy Yankee & BZRP"]
+};
+
+const MATCHES = [
+  { id: "L-R0", a: "TQMQA", b: "AKAKAW" },
+  { id: "L-R1-1", a: "ANGEL", b: { from: "L-R0" } },
+  { id: "L-R1-2", a: "TOCANDO", b: "REGALO" },
+  { id: "L-R1-3", a: "SISABES", b: "AMULETO" },
+  { id: "L-R1-4", a: "NARCISISTA", b: "COLEC" },
+  { id: "R-R1-1", a: "PARAQUE", b: "MUJER" },
+  { id: "R-R1-2", a: "BUENCAFE", b: "GOODBYE" },
+  { id: "R-R1-3", a: "FEB6", b: "LUNALLENA" },
+  { id: "R-R1-4", a: "VUELA", b: "BZRP" },
+  { id: "L-QF-1", a: { from: "L-R1-1" }, b: { from: "L-R1-2" } },
+  { id: "L-QF-2", a: { from: "L-R1-3" }, b: { from: "L-R1-4" } },
+  { id: "R-QF-1", a: { from: "R-R1-1" }, b: { from: "R-R1-2" } },
+  { id: "R-QF-2", a: { from: "R-R1-3" }, b: { from: "R-R1-4" } },
+  { id: "L-SF", a: { from: "L-QF-1" }, b: { from: "L-QF-2" } },
+  { id: "R-SF", a: { from: "R-QF-1" }, b: { from: "R-QF-2" } },
+  { id: "FINAL", a: { from: "L-SF" }, b: { from: "R-SF" } }
+];
+
+const MATCH_BY_ID = Object.fromEntries(MATCHES.map((m) => [m.id, m]));
+
 function page(title, innerHtml) {
   root.innerHTML = `
     <div class="container">
@@ -130,6 +171,68 @@ function downloadWorkbook(snapshot) {
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   XLSX.writeFile(wb, `locura-data-${stamp}.xlsx`);
+}
+
+function resolveSeed(slot, picks) {
+  if (typeof slot === "string") return slot;
+  if (!slot?.from) return null;
+  const prev = MATCH_BY_ID[slot.from];
+  if (!prev) return null;
+  const pick = picks?.[slot.from];
+  if (pick === "A") return resolveSeed(prev.a, picks);
+  if (pick === "B") return resolveSeed(prev.b, picks);
+  return null;
+}
+
+function songText(seed) {
+  const song = SONGS[seed];
+  return song ? `${song[0]} - ${song[1]}` : "";
+}
+
+function exportSongSelections(snapshot, selectedTeacher, selectedPeriod) {
+  const classesById = Object.fromEntries((snapshot.classes || []).map((row) => [row.id, row]));
+  const rows = (snapshot.submissions || [])
+    .filter((row) => row.locked === true)
+    .map((row) => {
+      const classRow = classesById[row.class_id] || {};
+      return {
+        submission: row,
+        classRow
+      };
+    })
+    .filter(({ classRow }) => {
+      const teacherOk = !selectedTeacher || String(classRow.teacher_name ?? "") === selectedTeacher;
+      const periodOk = !selectedPeriod || String(classRow.period ?? "") === selectedPeriod;
+      return teacherOk && periodOk;
+    })
+    .map(({ submission, classRow }) => {
+      const base = {
+        nombre: submission.nombre ?? "",
+        email: submission.email ?? "",
+        teacher_name: classRow.teacher_name ?? "",
+        period: classRow.period ?? "",
+        clase: submission.clase ?? "",
+        user_id: submission.user_id
+      };
+
+      for (const match of MATCHES) {
+        const pick = submission.picks?.[match.id];
+        if (!pick) {
+          base[match.id] = "";
+          continue;
+        }
+        const seed = pick === "A" ? resolveSeed(match.a, submission.picks) : resolveSeed(match.b, submission.picks);
+        base[match.id] = songText(seed);
+      }
+
+      return base;
+    });
+
+  const ws = XLSX.utils.json_to_sheet(rowsForSheet(rows));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "song_picks");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  XLSX.writeFile(wb, `locura-song-selections-${stamp}.xlsx`);
 }
 
 function leaderboardTable(rows) {
@@ -309,6 +412,7 @@ async function renderTeacherDashboard(user, profile) {
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn" id="btnRefresh" type="button">Refresh</button>
           <button class="btn" id="btnExport" type="button">Download Spreadsheet</button>
+          <button class="btn" id="btnSongExport" type="button">Download Song Selections</button>
           <button class="btn danger" id="btnOut" type="button">Sign out</button>
         </div>
       </div>
@@ -340,6 +444,14 @@ async function renderTeacherDashboard(user, profile) {
     try {
       const snapshot = await exportLocuraData();
       downloadWorkbook(snapshot);
+    } catch (e) {
+      alert(e.message ?? String(e));
+    }
+  };
+  document.querySelector("#btnSongExport").onclick = async () => {
+    try {
+      const snapshot = await exportLocuraData();
+      exportSongSelections(snapshot, selectedTeacher, selectedPeriod);
     } catch (e) {
       alert(e.message ?? String(e));
     }
