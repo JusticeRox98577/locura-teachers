@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const SUPABASE_URL = "https://nkufgygqbzhtacvoqgmi.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_jpLHfC3L8-Nvw4q4xcgTCw_Y0qA_m_0";
@@ -97,6 +98,40 @@ async function loadLeaderboard() {
   return data ?? [];
 }
 
+async function exportLocuraData() {
+  const { data, error } = await supabase.rpc("export_locura_data");
+  if (error) throw error;
+  if (!data?.ok) throw new Error(data?.error || "Export failed");
+  return data.snapshot || {};
+}
+
+function rowsForSheet(rows) {
+  return Array.isArray(rows) && rows.length ? rows : [{ empty: "" }];
+}
+
+function downloadWorkbook(snapshot) {
+  const wb = XLSX.utils.book_new();
+  const orderedSheets = [
+    ["config", snapshot.config],
+    ["results", snapshot.results],
+    ["submissions", snapshot.submissions],
+    ["classes", snapshot.classes],
+    ["teacher_profiles", snapshot.teacher_profiles],
+    ["leaderboard", snapshot.leaderboard],
+    ["vote_rounds", snapshot.vote_rounds],
+    ["vote_votes", snapshot.vote_votes],
+    ["vote_round_history", snapshot.vote_round_history]
+  ];
+
+  for (const [name, rows] of orderedSheets) {
+    const ws = XLSX.utils.json_to_sheet(rowsForSheet(rows));
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  XLSX.writeFile(wb, `locura-data-${stamp}.xlsx`);
+}
+
 function leaderboardTable(rows) {
   const body = rows.map(r => `
     <tr>
@@ -135,7 +170,7 @@ async function renderLoggedOut() {
           <div class="label">Email</div>
           <input class="input" id="su_email" placeholder="teacher@school.org" />
           <div class="label">Password</div>
-          <input class="input" id="su_pass" type="password" placeholder="••••••••" />
+          <input class="input" id="su_pass" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
           <div style="margin-top:10px;">
             <button class="btn primary" id="btnSignup" type="button">Create account</button>
           </div>
@@ -147,7 +182,7 @@ async function renderLoggedOut() {
           <div class="label">Email</div>
           <input class="input" id="si_email" placeholder="teacher@school.org" />
           <div class="label">Password</div>
-          <input class="input" id="si_pass" type="password" placeholder="••••••••" />
+          <input class="input" id="si_pass" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" />
           <div style="margin-top:10px;">
             <button class="btn" id="btnSignin" type="button">Sign in</button>
           </div>
@@ -168,7 +203,7 @@ async function renderLoggedOut() {
 
   document.querySelector("#btnSignup").onclick = async () => {
     try {
-      msg("Creating account…");
+      msg("Creating accountâ€¦");
       await signUpEmail(
         document.querySelector("#su_email").value.trim(),
         document.querySelector("#su_pass").value
@@ -181,7 +216,7 @@ async function renderLoggedOut() {
 
   document.querySelector("#btnSignin").onclick = async () => {
     try {
-      msg("Signing in…");
+      msg("Signing inâ€¦");
       await signInEmail(
         document.querySelector("#si_email").value.trim(),
         document.querySelector("#si_pass").value
@@ -197,7 +232,7 @@ async function renderNeedsClaim(user) {
   page("Teachers", `
     ${card(`
       <h2>Teacher setup</h2>
-      <p class="hint">Fill this out once. You’ll be auto-added as a teacher after you submit.</p>
+      <p class="hint">Fill this out once. Youâ€™ll be auto-added as a teacher after you submit.</p>
 
       <div class="label">Signed in as</div>
       <div class="mono">${esc(user.email)}</div>
@@ -246,14 +281,14 @@ async function renderNeedsClaim(user) {
 
   document.querySelector("#btnClaim").onclick = async () => {
     try {
-      msg("Submitting…");
+      msg("Submittingâ€¦");
       await claimTeacher({
         code: document.querySelector("#code").value.trim(),
         full_name: document.querySelector("#name").value.trim(),
         class_level: document.querySelector("#level").value.trim(),
         school: document.querySelector("#school").value.trim(),
       });
-      msg("Unlocked. Loading leaderboard…");
+      msg("Unlocked. Loading leaderboardâ€¦");
       await main();
     } catch (e) {
       msg(e.message ?? String(e), true);
@@ -268,10 +303,11 @@ async function renderTeacherDashboard(user, profile) {
         <div>
           <h2>Teacher dashboard</h2>
           <div class="smallMuted">Signed in: <span class="mono">${esc(user.email)}</span></div>
-          <div class="smallMuted">Profile: ${esc(profile.full_name ?? "")} � ${esc(profile.class_level ?? "")} � ${esc(profile.school ?? "")}</div>
+          <div class="smallMuted">Profile: ${esc(profile.full_name ?? "")} • ${esc(profile.class_level ?? "")} • ${esc(profile.school ?? "")}</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn" id="btnRefresh" type="button">Refresh</button>
+          <button class="btn" id="btnExport" type="button">Download Spreadsheet</button>
           <button class="btn danger" id="btnOut" type="button">Sign out</button>
         </div>
       </div>
@@ -299,6 +335,14 @@ async function renderTeacherDashboard(user, profile) {
   bindTopOut();
 
   document.querySelector("#btnOut").onclick = signOut;
+  document.querySelector("#btnExport").onclick = async () => {
+    try {
+      const snapshot = await exportLocuraData();
+      downloadWorkbook(snapshot);
+    } catch (e) {
+      alert(e.message ?? String(e));
+    }
+  };
 
   let allRows = [];
   let selectedTeacher = "";
