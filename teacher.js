@@ -137,6 +137,7 @@ function leaderboardTable(rows) {
     <tr>
       <td>${r.points ?? 0}</td>
       <td>${esc(r.nombre)}</td>
+      <td>${esc(r.email ?? "")}</td>
       <td>${esc(r.teacher_name ?? "")}</td>
       <td>${esc(r.period ?? "")}</td>
       <td>${esc(r.clase)}</td>
@@ -150,7 +151,7 @@ function leaderboardTable(rows) {
     </div>
     <table class="adminTable">
       <thead>
-        <tr><th>Points</th><th>Name</th><th>Teacher</th><th>Period</th><th>Class</th><th>User</th></tr>
+        <tr><th>Points</th><th>Name</th><th>Email</th><th>Teacher</th><th>Period</th><th>Class</th><th>User</th></tr>
       </thead>
       <tbody>${body}</tbody>
     </table>
